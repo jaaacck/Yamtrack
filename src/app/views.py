@@ -380,6 +380,65 @@ def season_details(request, source, media_id, title, season_number):  # noqa: AR
     return render(request, "app/media_details.html", context)
 
 
+@require_GET
+def episode_details_modal(request, source, media_id, season_number, episode_number):
+    """Return the episode details modal with cast, crew, and full TMDB data."""
+    try:
+        # Fetch the full TV data with the specific season
+        tv_with_seasons_metadata = services.get_media_metadata(
+            "tv_with_seasons",
+            media_id,
+            source,
+            [season_number],
+        )
+        season_metadata = tv_with_seasons_metadata[f"season/{season_number}"]
+
+        # Find the specific episode
+        episode_data = None
+        for ep in season_metadata["episodes"]:
+            if ep["episode_number"] == int(episode_number):
+                episode_data = ep
+                break
+
+        if episode_data is None:
+            logger.warning(
+                "Episode %d not found in season %d for media %s",
+                episode_number,
+                season_number,
+                media_id,
+            )
+            return HttpResponse("Episode not found", status=404)
+
+        # Get user's tracking data for this episode if it exists
+        user_episodes = BasicMedia.objects.filter_media(
+            request.user,
+            media_id,
+            MediaTypes.EPISODE.value,
+            source,
+            season_number=season_number,
+            episode_number=episode_number,
+        )
+
+        context = {
+            "episode": episode_data,
+            "tv_title": season_metadata["title"],
+            "season_number": season_number,
+            "user_episode": user_episodes.first() if user_episodes else None,
+            "media_id": media_id,
+            "source": source,
+        }
+
+        return render(
+            request,
+            "app/components/episode_details_modal.html",
+            context,
+        )
+
+    except services.ProviderAPIError as error:
+        logger.exception("Error fetching episode details: %s", error)
+        return HttpResponse("Error loading episode details", status=500)
+
+
 @require_POST
 def update_media_score(request, media_type, instance_id):
     """Update the user's score for a media item."""
