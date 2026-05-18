@@ -742,6 +742,71 @@ def find_next_episode(episode_number, episodes_metadata):
     return episodes_metadata[current_episode_index + 1]["episode_number"]
 
 
+def episode_full(media_id, season_number, episode_number):
+    """Return the full metadata for an episode including cast and crew."""
+    url = f"{base_url}/tv/{media_id}/season/{season_number}/episode/{episode_number}"
+    
+    params = {
+        **base_params,
+        "append_to_response": "credits",
+    }
+
+    try:
+        response = services.api_request(
+            Sources.TMDB.value,
+            "GET",
+            url,
+            params=params,
+        )
+    except requests.exceptions.HTTPError as error:
+        handle_error(error)
+
+    # Extract cast and crew information
+    credits = response.get("credits", {})
+    cast = credits.get("cast", [])
+    crew = credits.get("crew", [])
+
+    # Filter cast and crew with relevant information
+    filtered_cast = [
+        {
+            "id": member.get("id"),
+            "name": member.get("name"),
+            "character": member.get("character"),
+            "image": get_image_url(member.get("profile_path")),
+        }
+        for member in cast[:20]
+    ]
+
+    # Filter crew for key departments (directors, writers, producers)
+    key_departments = {"Director", "Writer", "Producer"}
+    filtered_crew = {}
+    for member in crew:
+        department = member.get("job", "")
+        if member.get("department") in ["Directing", "Writing", "Production"]:
+            dept_key = member.get("department", "Other")
+            if dept_key not in filtered_crew:
+                filtered_crew[dept_key] = []
+            filtered_crew[dept_key].append({
+                "name": member.get("name"),
+                "job": department,
+                "image": get_image_url(member.get("profile_path")),
+            })
+
+    return {
+        "episode_number": response.get("episode_number"),
+        "season_number": response.get("season_number"),
+        "title": response.get("name"),
+        "overview": response.get("overview"),
+        "air_date": response.get("air_date"),
+        "runtime": response.get("runtime"),
+        "image": get_image_url(response.get("still_path")),
+        "vote_average": response.get("vote_average"),
+        "vote_count": response.get("vote_count"),
+        "cast": filtered_cast,
+        "crew": filtered_crew,
+    }
+
+
 def episode(media_id, season_number, episode_number):
     """Return the metadata for the selected episode from The Movie Database."""
     tv_metadata = tv_with_seasons(media_id, [season_number])
